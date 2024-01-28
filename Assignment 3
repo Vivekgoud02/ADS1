@@ -1,0 +1,127 @@
+#!/usr/bin/env python
+# coding: utf-8
+
+import pandas as pd
+from sklearn.cluster import KMeans
+from sklearn.preprocessing import StandardScaler
+from sklearn.metrics import silhouette_score
+from sklearn.impute import SimpleImputer
+from scipy.optimize import curve_fit
+import numpy as np
+import matplotlib.pyplot as plt
+
+
+def read_and_preprocess_data(file_path):
+
+    # Reading CSV to fetch data
+    df = pd.read_csv("Data.csv")
+    # Selection of relevant columns that will be used for clustering
+    
+    columns_for_clustering = [
+        "Current account balance (% of GDP) [BN.CAB.XOKA.GD.ZS]",
+        "Foreign direct investment, net inflows (% of GDP) [BX.KLT.DINV.WD.GD.ZS]",
+        "Foreign direct investment, net outflows (% of GDP) [BM.KLT.DINV.WD.GD.ZS]",
+        "Trade in services (% of GDP) [BG.GSR.NFSV.GD.ZS]"
+    ]
+
+    # Replace non-numeric values with NaN
+    df[columns_for_clustering] = df[columns_for_clustering].\
+        replace('..', pd.NA)
+
+    # Convert columns to numeric
+    df[columns_for_clustering] = df[columns_for_clustering].\
+        apply(pd.to_numeric, errors='coerce')
+
+    # Imputing missing values
+    imputer = SimpleImputer(strategy='mean')
+    df[columns_for_clustering] = imputer.fit_transform(
+        df[columns_for_clustering])
+
+    return df, columns_for_clustering
+
+
+def perform_kmeans_clustering(df, columns_for_clustering, n_clusters=4):
+    # Normalizing the data
+    scaler = StandardScaler()
+    X_normal = scaler.fit_transform(df[columns_for_clustering])
+
+    # Applying k-means clustering
+    kmeans = KMeans(n_clusters=n_clusters, random_state=0)
+    df['cluster'] = kmeans.fit_predict(X_normal)
+
+    # Calculating silhouette score
+    silhouette_avg = silhouette_score(X_normal, df['cluster'])
+    print(f'Silhouette Score: {silhouette_avg}')
+
+    # Plotting cluster
+    plt.scatter(X_normal[:, 0], X_normal[:, 1],
+                c=df['cluster'], cmap='plasma')
+    plt.scatter(kmeans.cluster_centers_[:, 0],
+                kmeans.cluster_centers_[:, 1], s=1000, c='Green', marker='X')
+    plt.title('K-Means Clustering', fontsize=16)
+    plt.xlabel('Current account balance', fontsize=12)
+    plt.ylabel('Foreign direct investment', fontsize=12)
+    plt.show()
+
+    return df, X_normal
+
+
+def err_ranges(x, params, covariance, z_value):
+    y_fit = func(x, *params)
+
+    std_dev = np.sqrt(np.sum((np.dot(np.vander(x, len(params)),
+                                     covariance) * np.vander(x, len(params))) ** 2, axis=1))
+
+    lower_bound = y_fit - z_value * std_dev
+    upper_bound = y_fit + z_value * std_dev
+    return lower_bound, upper_bound
+
+
+def func(x, a, b, c):
+    return a * x ** 2 + b * x + c
+
+
+def fit_and_plot_curve_time(df, y_data_column, n_points=200):
+    df['Time'] = pd.to_numeric(df['Time'], errors='coerce')
+
+    df = df.dropna(subset=['Time'])
+
+    time_data = df['Time'].to_numpy()
+    y_data = df[y_data_column].to_numpy()
+
+    params, covariance = curve_fit(func, time_data, y_data)
+
+    time_range = np.linspace(min(time_data), max(time_data), n_points)
+
+    y_fit = func(time_range, *params)
+    lower_bound, upper_bound = err_ranges(time_range, params, covariance, 1)
+
+    plt.scatter(time_data, y_data, label='Data')
+    plt.plot(time_range, y_fit, label='Best Fit')
+    plt.fill_between(time_range, lower_bound, upper_bound,
+                     alpha=0.2, label='Confidence Interval')
+
+    plt.title('Curve Fitting (Trade in services  vs Time)')
+    plt.xlabel('Time')
+    plt.ylabel('Trade in services')
+    plt.legend()
+    plt.show()
+
+
+if __name__ == "__main__":
+    file_path = r"C:\Users\HP\Desktop\Data.csv"
+
+    # Reading and preprocessing data
+    df, columns_for_clustering = read_and_preprocess_data(file_path)
+
+    # Performing k-means clustering
+    df, X_normal = perform_kmeans_clustering(df, columns_for_clustering)
+
+    selected_cluster = 3
+    selected_cluster_data = df[df['cluster'] == selected_cluster]
+
+    # Specifying the column for fitting
+    y_data_column = "Current account balance (% of GDP) [BN.CAB.XOKA.GD.ZS]"
+    # Fitting and plotting the curve for India
+    fit_and_plot_curve_time(selected_cluster_data, y_data_column)
+
